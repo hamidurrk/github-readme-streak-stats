@@ -10,7 +10,37 @@ declare(strict_types=1);
 
 // Default cache duration: 24 hours (in seconds)
 define("CACHE_DURATION", 24 * 60 * 60);
-define("CACHE_DIR", __DIR__ . "/../cache");
+define("CACHE_DIR", resolveCacheDir());
+
+/**
+ * Resolve a writable cache directory
+ *
+ * Priority:
+ * 1. CACHE_DIR environment variable (if set)
+ * 2. Project cache directory when writable
+ * 3. System temp directory (for serverless/read-only deployments)
+ *
+ * @return string Absolute path to cache directory
+ */
+function resolveCacheDir(): string
+{
+    $envCacheDir = getenv("CACHE_DIR");
+    if (is_string($envCacheDir) && $envCacheDir !== "") {
+        return rtrim($envCacheDir, "/\\");
+    }
+
+    $projectCacheDir = __DIR__ . "/../cache";
+    if (is_dir($projectCacheDir) && is_writable($projectCacheDir)) {
+        return $projectCacheDir;
+    }
+
+    $projectParentDir = dirname($projectCacheDir);
+    if (is_dir($projectParentDir) && is_writable($projectParentDir)) {
+        return $projectCacheDir;
+    }
+
+    return rtrim(sys_get_temp_dir(), "/\\") . "/github-readme-streak-stats-cache";
+}
 
 /**
  * Generate a cache key for a user's request
@@ -53,10 +83,18 @@ function getCacheFilePath(string $key): string
  */
 function ensureCacheDir(): bool
 {
-    if (!is_dir(CACHE_DIR)) {
-        return mkdir(CACHE_DIR, 0755, true);
+    if (is_dir(CACHE_DIR)) {
+        return is_writable(CACHE_DIR);
     }
-    return true;
+
+    $parentDir = dirname(CACHE_DIR);
+    if (!is_dir($parentDir) || !is_writable($parentDir)) {
+        error_log("Cache parent directory is not writable: " . $parentDir);
+        return false;
+    }
+
+    // Suppress runtime warnings and rely on boolean return for graceful fallback.
+    return @mkdir(CACHE_DIR, 0755, true) || is_dir(CACHE_DIR);
 }
 
 /**
